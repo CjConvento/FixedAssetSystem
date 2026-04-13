@@ -1,7 +1,7 @@
 ﻿@model FixedAssetSystem.Models.FixedAssetRequest
-
 @{
     ViewData["Title"] = "Create Fixed Asset Request";
+    var existingUnitsFromBag = ViewBag.ExistingUnits as List<FixedAssetSystem.Models.ExistingUnitDetail>;
 }
 
 <h1>Create Fixed Asset Request</h1>
@@ -39,7 +39,6 @@
             </div>
             <div class="form-group">
                 <label asp-for="TargetDateNeeded" class="control-label"></label>
-                <!-- Native date picker (no external libraries) -->
                 <input asp-for="TargetDateNeeded" class="form-control" type="date" value="@DateTime.Now.AddDays(30).ToString("yyyy-MM-dd")" required />
                 <span asp-validation-for="TargetDateNeeded" class="text-danger"></span>
             </div>
@@ -107,7 +106,7 @@
         <span asp-validation-for="EvaluatedByName" class="text-danger"></span>
     </div>
 
-    <!-- Existing units section (unchanged) -->
+    <!-- Existing units section -->
     <div id="existingUnitsSection" style="display: none; margin-top: 20px;">
         <div class="section-title">EXISTING UNIT DETAILS</div>
         <table id="existingUnitsTable" class="table table-bordered">
@@ -121,7 +120,23 @@
                     <th></th>
                 </tr>
             </thead>
-            <tbody></tbody>
+            <tbody>
+                @if (existingUnitsFromBag != null && existingUnitsFromBag.Any())
+                {
+                    for (int i = 0; i < existingUnitsFromBag.Count; i++)
+                    {
+                        var unit = existingUnitsFromBag[i];
+                        <tr>
+                            <td><input type="number" name="ExistingUnits[@i].ItemNo" class="form-control item-no" value="@unit.ItemNo" /></td>
+                            <td><input type="text" name="ExistingUnits[@i].Description" class="form-control description" value="@unit.Description" required /></td>
+                            <td><input type="text" name="ExistingUnits[@i].Location" class="form-control location" value="@unit.Location" /></td>
+                            <td><input type="text" name="ExistingUnits[@i].UserName" class="form-control user-name" value="@unit.UserName" /></td>
+                            <td><input type="text" name="ExistingUnits[@i].Remarks" class="form-control remarks" value="@unit.Remarks" /></td>
+                            <td><button type="button" class="btn btn-danger btn-sm removeRow">Remove</button></td>
+                        </tr>
+                    }
+                }
+            </tbody>
         </table>
         <button type="button" id="addUnitRow" class="btn btn-sm btn-secondary">Add Another Unit</button>
     </div>
@@ -136,5 +151,8 @@
     @{
         await Html.RenderPartialAsync("_ValidationScriptsPartial");
     }
+    <script>
+        window.initialExistingUnitCount = @(existingUnitsFromBag?.Count ?? 0);
+    </script>
     <script src="~/js/fixedasset-create.js"></script>
 }

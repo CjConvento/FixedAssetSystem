@@ -1,6 +1,22 @@
 ﻿// edit.js
 let rowIndex = 0;
 
+function escapeHtml(str) {
+    if (str === undefined || str === null) return '';
+    // Convert to string (handles numbers, etc.)
+    str = str.toString();
+    return str.replace(/[&<>]/g, function (m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        return m;
+    }).replace(/["']/g, function (m) {
+        if (m === '"') return '&quot;';
+        if (m === "'") return '&#39;';
+        return m;
+    });
+}
+
 function addRow(itemNo = '', description = '', location = '', userName = '', remarks = '') {
     const newRow = `
         <tr>
@@ -13,20 +29,6 @@ function addRow(itemNo = '', description = '', location = '', userName = '', rem
         </tr>`;
     $("#existingUnitsTable tbody").append(newRow);
     rowIndex++;
-}
-
-function escapeHtml(str) {
-    if (!str) return '';
-    return str.replace(/[&<>]/g, function (m) {
-        if (m === '&') return '&amp;';
-        if (m === '<') return '&lt;';
-        if (m === '>') return '&gt;';
-        return m;
-    }).replace(/["']/g, function (m) {
-        if (m === '"') return '&quot;';
-        if (m === "'") return '&#39;';
-        return m;
-    });
 }
 
 function reindexRows() {
@@ -43,8 +45,11 @@ function reindexRows() {
 
 $(document).ready(function () {
     // Retrieve server‑side data
-    var requestType = window.fixedAssetEdit.requestType;
-    var existingUnits = window.fixedAssetEdit.existingUnits;
+    var requestType = window.fixedAssetEdit ? window.fixedAssetEdit.requestType : null;
+    var existingUnits = window.fixedAssetEdit ? window.fixedAssetEdit.existingUnits : null;
+
+    console.log("requestType:", requestType);
+    console.log("existingUnits:", existingUnits);
 
     // Show/hide existing units section based on RequestType
     $("#RequestType").change(function () {
@@ -80,17 +85,29 @@ $(document).ready(function () {
     // Pre‑populate existing units when the page loads
     if (requestType === 'Additional') {
         $("#existingUnitsSection").show();
-        $("#existingUnitsTable tbody").empty();
-        rowIndex = 0;
-        if (existingUnits && existingUnits.length) {
-            for (var i = 0; i < existingUnits.length; i++) {
-                addRow(existingUnits[i].itemNo, existingUnits[i].description, existingUnits[i].location, existingUnits[i].userName, existingUnits[i].remarks);
-            }
+        var existingRowCount = $("#existingUnitsTable tbody tr").length;
+        if (existingRowCount > 0) {
+            rowIndex = existingRowCount;
+            reindexRows();
         } else {
-            addRow();
+            if (existingUnits && existingUnits.length) {
+                for (var i = 0; i < existingUnits.length; i++) {
+                    addRow(
+                        existingUnits[i].itemNo,
+                        existingUnits[i].description,
+                        existingUnits[i].location,
+                        existingUnits[i].userName,
+                        existingUnits[i].remarks
+                    );
+                }
+            } else {
+                addRow();
+            }
         }
     } else {
         $("#existingUnitsSection").hide();
+        $("#existingUnitsTable tbody").empty();
+        rowIndex = 0;
     }
 
     // Validation before submit

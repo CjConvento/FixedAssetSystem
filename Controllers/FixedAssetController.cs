@@ -73,123 +73,202 @@ namespace FixedAssetSystem.Controllers
 
             if (id != updatedRequest.Id) return NotFound();
 
-            if (ModelState.IsValid)
+            // Remove validation for navigation properties (they are not needed for update)
+            ModelState.Remove("RequestedByEmployee");
+            ModelState.Remove("EvaluatedByEmployee");
+
+            // ========== ADD CUSTOM VALIDATIONS (same as Create) ==========
+            if (updatedRequest.Quantity < 1)
             {
-                try
+                ModelState.AddModelError("Quantity", "Quantity must be at least 1.");
+            }
+
+            // We'll parse existing units first so we can validate them
+            List<ExistingUnitDetail> parsedUnits = new List<ExistingUnitDetail>();
+            if (updatedRequest.RequestType == "Additional")
+            {
+                int idx = 0;
+                while (Request.Form.ContainsKey($"ExistingUnits[{idx}].Description"))
                 {
-                    var existing = await _context.FixedAssetRequests
-                        .Include(r => r.ExistingUnitDetails)
-                        .FirstOrDefaultAsync(r => r.Id == id);
-
-                    if (existing == null) return NotFound();
-
-                    // Update basic fields (do not change ControlNo, RequestedBy, CreatedAt)
-                    existing.Department = updatedRequest.Department;
-                    existing.Section = updatedRequest.Section;
-                    existing.TargetDateNeeded = updatedRequest.TargetDateNeeded;
-                    existing.Quantity = updatedRequest.Quantity;
-                    existing.AssetType = updatedRequest.AssetType;
-                    existing.DetailedDescription = updatedRequest.DetailedDescription;
-                    existing.ReasonPurpose = updatedRequest.ReasonPurpose;
-                    existing.ProposedLocation = updatedRequest.ProposedLocation;
-                    existing.EstimatedLifeSpan = updatedRequest.EstimatedLifeSpan;
-                    existing.RequestType = updatedRequest.RequestType;
-                    existing.DamagedReportNo = updatedRequest.DamagedReportNo;
-                    existing.EvaluatedByName = updatedRequest.EvaluatedByName;
-                    existing.UpdatedAt = DateTime.Now;
-
-                    // Handle ExistingUnitDetails for "Additional" requests
-                    if (existing.RequestType == "Additional")
+                    var description = Request.Form[$"ExistingUnits[{idx}].Description"].ToString();
+                    if (!string.IsNullOrWhiteSpace(description))
                     {
-                        // Remove old existing units
-                        _context.ExistingUnitDetails.RemoveRange(existing.ExistingUnitDetails);
+                        var itemNoStr = Request.Form[$"ExistingUnits[{idx}].ItemNo"].ToString();
+                        int itemNo = string.IsNullOrEmpty(itemNoStr) ? idx + 1 : int.Parse(itemNoStr);
+                        var location = Request.Form[$"ExistingUnits[{idx}].Location"].ToString();
+                        var userName = Request.Form[$"ExistingUnits[{idx}].UserName"].ToString();
+                        var remarks = Request.Form[$"ExistingUnits[{idx}].Remarks"].ToString();
 
-                        // Add new ones from the form
-                        var itemNos = Request.Form["ExistingUnits[].ItemNo"];
-                        var descriptions = Request.Form["ExistingUnits[].Description"];
-                        var locations = Request.Form["ExistingUnits[].Location"];
-                        var userNames = Request.Form["ExistingUnits[].UserName"];
-                        var remarks = Request.Form["ExistingUnits[].Remarks"];
-
-                        for (int i = 0; i < descriptions.Count; i++)
+                        parsedUnits.Add(new ExistingUnitDetail
                         {
-                            if (!string.IsNullOrEmpty(descriptions[i]))
-                            {
-                                var unit = new ExistingUnitDetail
-                                {
-                                    FixedAssetRequestId = existing.Id,
-                                    ItemNo = int.TryParse(itemNos[i], out int ino) ? ino : i + 1,
-                                    Description = descriptions[i]!,
-                                    Location = locations[i] ?? string.Empty,
-                                    UserName = userNames[i] ?? string.Empty,
-                                    Remarks = remarks[i] ?? string.Empty
-                                };
-                                _context.ExistingUnitDetails.Add(unit);
-                            }
-                        }
+                            ItemNo = itemNo,
+                            Description = description,
+                            Location = location ?? string.Empty,
+                            UserName = userName ?? string.Empty,
+                            Remarks = remarks ?? string.Empty
+                        });
                     }
-
-                    await _context.SaveChangesAsync();
-                    TempData["SuccessMessage"] = "Request updated successfully.";
-                    return RedirectToAction(nameof(Index));
+                    idx++;
                 }
-                catch (DbUpdateConcurrencyException)
+
+                if (!parsedUnits.Any())
                 {
-                    if (!_context.FixedAssetRequests.Any(e => e.Id == id)) return NotFound();
-                    throw;
+                    ModelState.AddModelError("ExistingUnits", "At least one existing unit with a Description is required when Request Type is 'Additional'.");
                 }
             }
-            return View(updatedRequest);
+            // ============================================================
+
+            if (!ModelState.IsValid)
+            {
+                return View(updatedRequest);
+            }
+
+            try
+            {
+                var existing = await _context.FixedAssetRequests
+                    .Include(r => r.ExistingUnitDetails)
+                    .FirstOrDefaultAsync(r => r.Id == id);
+
+                if (existing == null) return NotFound();
+
+                // Update basic fields
+                existing.Department = updatedRequest.Department;
+                existing.Section = updatedRequest.Section;
+                existing.TargetDateNeeded = updatedRequest.TargetDateNeeded;
+                existing.Quantity = updatedRequest.Quantity;
+                existing.AssetType = updatedRequest.AssetType;
+                existing.DetailedDescription = updatedRequest.DetailedDescription;
+                existing.ReasonPurpose = updatedRequest.ReasonPurpose;
+                existing.ProposedLocation = updatedRequest.ProposedLocation;
+                existing.EstimatedLifeSpan = updatedRequest.EstimatedLifeSpan;
+                existing.RequestType = updatedRequest.RequestType;
+                existing.DamagedReportNo = updatedRequest.DamagedReportNo;
+                existing.EvaluatedByName = updatedRequest.EvaluatedByName;
+                existing.UpdatedAt = DateTime.Now;
+
+                // Handle existing units
+                // Remove all old units first
+                _context.ExistingUnitDetails.RemoveRange(existing.ExistingUnitDetails);
+
+                if (existing.RequestType == "Additional" && parsedUnits.Any())
+                {
+                    foreach (var unit in parsedUnits)
+                    {
+                        unit.FixedAssetRequestId = existing.Id;
+                        _context.ExistingUnitDetails.Add(unit);
+                    }
+                }
+
+                await _context.SaveChangesAsync();
+                TempData["SuccessMessage"] = "Request updated successfully.";
+                return RedirectToAction(nameof(Index));
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                if (!_context.FixedAssetRequests.Any(e => e.Id == id)) return NotFound();
+                throw;
+            }
         }
 
         // GET: FixedAsset/Delete/5
         public async Task<IActionResult> Delete(int id)
         {
+            Console.WriteLine($"[DELETE GET] Called with id = {id}");
             var empId = HttpContext.Session.GetInt32("EmployeeId");
-            if (empId == null) return RedirectToAction("Login", "Account");
+            if (empId == null)
+            {
+                Console.WriteLine("[DELETE GET] No session, redirecting to login.");
+                return RedirectToAction("Login", "Account");
+            }
+            Console.WriteLine("[DELETE GET] Session OK, fetching request...");
 
             var request = await _context.FixedAssetRequests
                 .Include(r => r.ExistingUnitDetails)
                 .FirstOrDefaultAsync(r => r.Id == id);
 
-            if (request == null) return NotFound();
+            if (request == null)
+            {
+                Console.WriteLine("[DELETE GET] Request not found.");
+                return NotFound();
+            }
 
-            // Optional: only allow deletion of "Draft" requests
             if (request.RequestStatus != "Draft")
             {
+                Console.WriteLine($"[DELETE GET] Request status is {request.RequestStatus}, not Draft. Redirecting.");
                 TempData["ErrorMessage"] = "Only requests with 'Draft' status can be deleted.";
                 return RedirectToAction(nameof(Index));
             }
 
-            return View(request);
+            Console.WriteLine("[DELETE GET] Returning view.");
+            try
+            {
+                return View(request);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[DELETE GET] VIEW RENDERING EXCEPTION: {ex.ToString()}");
+                throw; // re‑throw to see the crash, but at least we logged it
+            }
         }
 
         // POST: FixedAsset/Delete/5
-        [HttpPost, ActionName("Delete")]
+        [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> DeleteConfirmed(int id)
         {
+            Console.WriteLine($"[DELETE POST] Called with id = {id}");
             var empId = HttpContext.Session.GetInt32("EmployeeId");
-            if (empId == null) return RedirectToAction("Login", "Account");
-
-            var request = await _context.FixedAssetRequests
-                .Include(r => r.ExistingUnitDetails)
-                .FirstOrDefaultAsync(r => r.Id == id);
-
-            if (request == null) return NotFound();
-
-            // Remove existing units first (if any)
-            if (request.ExistingUnitDetails != null && request.ExistingUnitDetails.Any())
+            if (empId == null)
             {
-                _context.ExistingUnitDetails.RemoveRange(request.ExistingUnitDetails);
+                Console.WriteLine("[DELETE POST] No session, redirecting to login.");
+                return RedirectToAction("Login", "Account");
             }
+            Console.WriteLine("[DELETE POST] Session OK, fetching request with all children...");
 
-            // Remove the main request
-            _context.FixedAssetRequests.Remove(request);
-            await _context.SaveChangesAsync();
+            try
+            {
+                var request = await _context.FixedAssetRequests
+                    .Include(r => r.ExistingUnitDetails)
+                    .Include(r => r.FixedAssetRequestApprovals)
+                    .Include(r => r.MemorandumReceipts)
+                    .Include(r => r.FixedAssetPrintLogs)
+                    .Include(r => r.RequestStatusHistories)
+                    .FirstOrDefaultAsync(r => r.Id == id);
 
-            TempData["SuccessMessage"] = "Request deleted successfully.";
-            return RedirectToAction(nameof(Index));
+                if (request == null)
+                {
+                    Console.WriteLine("[DELETE POST] Request not found.");
+                    return NotFound();
+                }
+
+                Console.WriteLine($"[DELETE POST] Found request. ExistingUnits: {request.ExistingUnitDetails?.Count() ?? 0}, " +
+                                  $"Approvals: {request.FixedAssetRequestApprovals?.Count() ?? 0}, " +
+                                  $"Memoranda: {request.MemorandumReceipts?.Count() ?? 0}, " +
+                                  $"PrintLogs: {request.FixedAssetPrintLogs?.Count() ?? 0}, " +
+                                  $"StatusHistory: {request.RequestStatusHistories?.Count() ?? 0}");
+
+                // Remove children (RemoveRange works even if empty)
+                _context.ExistingUnitDetails.RemoveRange(request.ExistingUnitDetails);
+                _context.FixedAssetRequestApprovals.RemoveRange(request.FixedAssetRequestApprovals);
+                _context.MemorandumReceipts.RemoveRange(request.MemorandumReceipts);
+                _context.FixedAssetPrintLogs.RemoveRange(request.FixedAssetPrintLogs);
+                _context.RequestStatusHistories.RemoveRange(request.RequestStatusHistories);
+                Console.WriteLine("[DELETE POST] Child records removed from context.");
+
+                _context.FixedAssetRequests.Remove(request);
+                Console.WriteLine("[DELETE POST] Main request marked for removal.");
+                await _context.SaveChangesAsync();
+                Console.WriteLine("[DELETE POST] SaveChanges succeeded.");
+
+                TempData["SuccessMessage"] = "Request deleted successfully.";
+                return RedirectToAction(nameof(Index));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[DELETE POST] EXCEPTION: {ex.ToString()}");
+                TempData["ErrorMessage"] = "An error occurred while deleting the request. Please try again.";
+                return RedirectToAction(nameof(Index));
+            }
         }
 
         public IActionResult Create()
@@ -211,7 +290,7 @@ namespace FixedAssetSystem.Controllers
             request.RequestedByEmployeeId = empId.Value;
             request.RequestedByName = HttpContext.Session.GetString("EmployeeName");
 
-            // Manual parsing of TargetDateNeeded from string (because input is type="text")
+            // Manual parsing of TargetDateNeeded
             var targetDateStr = Request.Form["TargetDateNeeded"].ToString();
             if (!DateOnly.TryParseExact(targetDateStr, "yyyy-MM-dd", out var targetDate))
             {
@@ -220,27 +299,65 @@ namespace FixedAssetSystem.Controllers
             }
             request.TargetDateNeeded = targetDate;
 
-            // Remove validation for navigation properties (they are not needed for creation)
+            // Remove validation for navigation properties
             ModelState.Remove("RequestedByEmployee");
             ModelState.Remove("EvaluatedByEmployee");
 
+            // ========== Manu-manong kunin ang ExistingUnits (indexed fields) ==========
+            List<ExistingUnitDetail> ExistingUnits = new List<ExistingUnitDetail>();
+            int idx = 0;
+            while (Request.Form.ContainsKey($"ExistingUnits[{idx}].Description"))
+            {
+                var description = Request.Form[$"ExistingUnits[{idx}].Description"].ToString();
+                if (!string.IsNullOrWhiteSpace(description))
+                {
+                    var itemNoStr = Request.Form[$"ExistingUnits[{idx}].ItemNo"].ToString();
+                    int itemNo = string.IsNullOrEmpty(itemNoStr) ? idx + 1 : int.Parse(itemNoStr);
+                    var location = Request.Form[$"ExistingUnits[{idx}].Location"].ToString();
+                    var userName = Request.Form[$"ExistingUnits[{idx}].UserName"].ToString();
+                    var remarks = Request.Form[$"ExistingUnits[{idx}].Remarks"].ToString();
+
+                    ExistingUnits.Add(new ExistingUnitDetail
+                    {
+                        ItemNo = itemNo,
+                        Description = description,
+                        Location = location ?? string.Empty,
+                        UserName = userName ?? string.Empty,
+                        Remarks = remarks ?? string.Empty
+                    });
+                }
+                idx++;
+            }
+            // ===========================================
+
+            // Custom validations
+            if (request.Quantity < 1)
+            {
+                ModelState.AddModelError("Quantity", "Quantity must be at least 1.");
+            }
+
+            if (request.RequestType == "Additional")
+            {
+                bool hasValidUnit = ExistingUnits.Any(u => !string.IsNullOrWhiteSpace(u.Description));
+                if (!hasValidUnit)
+                {
+                    ModelState.AddModelError("ExistingUnits", "At least one existing unit with a Description is required when Request Type is 'Additional'.");
+                }
+            }
+
             if (ModelState.IsValid)
             {
-                // Set fixed fields (these do not change on retry)
-                request.RequestedByEmployeeId = empId.Value;
-                request.RequestedByName = HttpContext.Session.GetString("EmployeeName");
                 request.CreatedAt = DateTime.Now;
                 request.UpdatedAt = DateTime.Now;
                 request.RequestStatus = "Draft";
                 request.RequestedAt = DateTime.Now;
-                request.DateRequested = DateOnly.FromDateTime(DateTime.Now);   // <-- ADD THIS
+                request.DateRequested = DateOnly.FromDateTime(DateTime.Now);
 
                 int maxRetries = 3;
                 for (int attempt = 1; attempt <= maxRetries; attempt++)
                 {
                     try
                     {
-                        // Generate control number (on retry, generate a new one)
                         if (attempt > 1)
                             request.ControlNo = GenerateControlNo(empId.Value, attempt - 1);
                         else
@@ -249,31 +366,12 @@ namespace FixedAssetSystem.Controllers
                         _context.Add(request);
                         await _context.SaveChangesAsync();
 
-                        // Save existing units if request type is "Additional"
-                        if (request.RequestType == "Additional")
+                        if (request.RequestType == "Additional" && ExistingUnits.Any())
                         {
-                            var itemNos = Request.Form["ExistingUnits[].ItemNo"];
-                            var descriptions = Request.Form["ExistingUnits[].Description"];
-                            var locations = Request.Form["ExistingUnits[].Location"];
-                            var userNames = Request.Form["ExistingUnits[].UserName"];
-                            var remarks = Request.Form["ExistingUnits[].Remarks"];
-
-                            for (int i = 0; i < descriptions.Count; i++)
+                            foreach (var unit in ExistingUnits)
                             {
-                                string? desc = descriptions[i];
-                                if (!string.IsNullOrEmpty(desc))
-                                {
-                                    var unit = new ExistingUnitDetail
-                                    {
-                                        FixedAssetRequestId = request.Id,
-                                        ItemNo = int.TryParse(itemNos[i], out int ino) ? ino : i + 1,
-                                        Description = desc,
-                                        Location = locations[i] ?? string.Empty,
-                                        UserName = userNames[i] ?? string.Empty,
-                                        Remarks = remarks[i] ?? string.Empty
-                                    };
-                                    _context.ExistingUnitDetails.Add(unit);
-                                }
+                                unit.FixedAssetRequestId = request.Id;
+                                _context.ExistingUnitDetails.Add(unit);
                             }
                             await _context.SaveChangesAsync();
                         }
@@ -282,12 +380,17 @@ namespace FixedAssetSystem.Controllers
                     }
                     catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("UQ_FixedAssetRequests_ControlNo") == true)
                     {
-                        if (attempt == maxRetries)
-                            throw; // rethrow if all retries fail
-                                   // Otherwise, loop again – a new control number will be generated
+                        if (attempt == maxRetries) throw;
                     }
                 }
             }
+
+            // Preserve existing units on validation failure
+            if (request.RequestType == "Additional" && ExistingUnits.Any())
+            {
+                ViewBag.ExistingUnits = ExistingUnits;
+            }
+
             return View(request);
         }
 

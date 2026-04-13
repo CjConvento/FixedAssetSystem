@@ -72,7 +72,18 @@
                         <strong>Please check:</strong><br />
                         <label><input type="checkbox" class="request-checkbox" value="New" /> New unit (First order/no existing unit)</label><br />
                         <label><input type="checkbox" class="request-checkbox" value="Additional" /> Additional (how many existing units and user) – <em>fill up data at the back of this form</em></label><br />
-                        <label><input type="checkbox" class="request-checkbox" value="Replacement" /> Replacement (attached damaged report) – Damaged Report no. _____________</label>
+                        <label>
+                            <input type="checkbox" class="request-checkbox" value="Replacement" @(Model.RequestType == "Replacement" ? "checked" : "") />
+                            Replacement (attached damaged report) – Damaged Report no.
+                            @if (Model.RequestType == "Replacement" && !string.IsNullOrEmpty(Model.DamagedReportNo))
+                            {
+                                <strong>@Model.DamagedReportNo</strong>
+                            }
+                            else
+                            {
+                                <span>_____________</span>
+                            }
+                        </label>
                     </td>
                 </tr>
                 <tr>

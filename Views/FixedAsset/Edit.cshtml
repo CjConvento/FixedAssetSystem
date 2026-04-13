@@ -2,7 +2,16 @@
 
 @{
     ViewData["Title"] = "Edit Fixed Asset Request";
-    var existingUnits = Model.ExistingUnitDetails?.OrderBy(e => e.ItemNo).ToList();
+
+    // Create a list of simple objects without navigation properties
+    var existingUnitsForJson = Model.ExistingUnitDetails?.OrderBy(e => e.ItemNo).Select(e => new
+    {
+        itemNo = e.ItemNo,
+        description = e.Description,
+        location = e.Location,
+        userName = e.UserName,
+        remarks = e.Remarks
+    }).ToList();
 }
 
 <h1>Edit Fixed Asset Request</h1>
@@ -105,7 +114,32 @@
                 </tr>
             </thead>
             <tbody>
-                <!-- rows will be added dynamically -->
+                @if (Model.RequestType == "Additional" && Model.ExistingUnitDetails != null && Model.ExistingUnitDetails.Any())
+                {
+                    var units = Model.ExistingUnitDetails.OrderBy(e => e.ItemNo).ToList();
+                    for (int i = 0; i < units.Count; i++)
+                    {
+                        var unit = units[i];
+                        <tr>
+                            <td><input type="number" name="ExistingUnits[@i].ItemNo" class="form-control item-no" value="@unit.ItemNo" /></td>
+                            <td><input type="text" name="ExistingUnits[@i].Description" class="form-control description" value="@unit.Description" required /></td>
+                            <td><input type="text" name="ExistingUnits[@i].Location" class="form-control location" value="@unit.Location" /></td>
+                            <td><input type="text" name="ExistingUnits[@i].UserName" class="form-control user-name" value="@unit.UserName" /></td>
+                            <td><input type="text" name="ExistingUnits[@i].Remarks" class="form-control remarks" value="@unit.Remarks" /></td>
+                            <td><button type="button" class="btn btn-danger btn-sm removeRow">Remove</button></td>
+                        </tr>   
+                    }
+                }
+                else
+                    {
+                        <tr>
+                            <td colspan="6" style="color:red;">
+                                DEBUG: No existing units found.<br />
+                                RequestType = @Model.RequestType<br />
+                                ExistingUnitDetails is @(Model.ExistingUnitDetails == null ? "NULL" : $"Count = {Model.ExistingUnitDetails.Count()}")
+                            </td>
+                        </tr>
+                    }
             </tbody>
         </table>
         <button type="button" id="addUnitRow" class="btn btn-sm btn-secondary">Add Another Unit</button>
@@ -122,10 +156,20 @@
         await Html.RenderPartialAsync("_ValidationScriptsPartial");
     }
     <script>
-        // Expose server‑side data to the external script
+        // Project existing units to a simple object without navigation cycles
+        @{
+                var existingUnitsForJson = Model.ExistingUnitDetails?.OrderBy(e => e.ItemNo).Select(e => new
+                {
+                        itemNo = e.ItemNo,
+                        description = e.Description,
+                        location = e.Location,
+                        userName = e.UserName,
+                        remarks = e.Remarks
+                }).ToList();
+        }
         window.fixedAssetEdit = {
             requestType: '@Model.RequestType',
-            existingUnits: @Html.Raw(Json.Serialize(existingUnits))
+            existingUnits: @Html.Raw(Json.Serialize(existingUnitsForJson))
         };
     </script>
     <script src="~/js/edit.js"></script>

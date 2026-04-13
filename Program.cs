@@ -1,5 +1,9 @@
 using FixedAssetSystem.Models;
+using System.Threading;
 using Microsoft.EntityFrameworkCore;
+
+// Increase minimum thread pool size (optional, may help with thread starvation)
+ThreadPool.SetMinThreads(100, 100);
 
 try
 {

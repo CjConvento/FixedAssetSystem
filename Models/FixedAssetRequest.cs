@@ -1,9 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 
 namespace FixedAssetSystem.Models;
 
-public partial class FixedAssetRequest
+public partial class FixedAssetRequest : IValidatableObject
 {
     public int Id { get; set; }
 
@@ -72,4 +73,24 @@ public partial class FixedAssetRequest
     public virtual ICollection<RequestStatusHistory> RequestStatusHistories { get; set; } = new List<RequestStatusHistory>();
 
     public virtual Employee? RequestedByEmployee { get; set; }
+
+    // ========== ADD VALIDATION METHOD ==========
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        // Validation 1: Quantity must be at least 1
+        if (Quantity < 1)
+        {
+            yield return new ValidationResult(
+                "Quantity must be at least 1.",
+                new[] { nameof(Quantity) });
+        }
+
+        // Validation 2: For Replacement requests, DamagedReportNo is required
+        if (RequestType == "Replacement" && string.IsNullOrWhiteSpace(DamagedReportNo))
+        {
+            yield return new ValidationResult(
+                "Damaged Report No. is required when Request Type is 'Replacement'.",
+                new[] { nameof(DamagedReportNo) });
+        }
+    }
 }
